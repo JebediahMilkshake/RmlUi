@@ -70,6 +70,12 @@ RMLUICORE_API void SetTextInputHandler(TextInputHandler* text_input_handler);
 /// Returns RmlUi's default implementation of a text input handler.
 RMLUICORE_API TextInputHandler* GetTextInputHandler();
 
+/// Sets how long a focused text field's caret stays in each visibility state before toggling, in seconds.
+/// @param[in] seconds Half-period of the blink cycle; defaults to 0.7s. Values <= 0 disable blinking (caret stays solid).
+RMLUICORE_API void SetTextCursorBlinkInterval(float seconds);
+/// Returns the current text field caret blink interval, in seconds.
+RMLUICORE_API float GetTextCursorBlinkInterval();
+
 /// Creates a new element context.
 /// @param[in] name The new name of the context. This must be unique.
 /// @param[in] dimensions The initial dimensions of the new context.

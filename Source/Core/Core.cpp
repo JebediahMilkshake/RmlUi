@@ -47,6 +47,7 @@ static SystemInterface* system_interface = nullptr;
 static FileInterface* file_interface = nullptr;
 static FontEngineInterface* font_interface = nullptr;
 static TextInputHandler* text_input_handler = nullptr;
+static float text_cursor_blink_interval = 0.7f;
 
 struct CoreData {
 	// Default interfaces should be created and destroyed on Initialise and Shutdown, respectively.
@@ -253,6 +254,16 @@ void SetTextInputHandler(TextInputHandler* _text_input_handler)
 TextInputHandler* GetTextInputHandler()
 {
 	return text_input_handler;
+}
+
+void SetTextCursorBlinkInterval(float seconds)
+{
+	text_cursor_blink_interval = seconds;
+}
+
+float GetTextCursorBlinkInterval()
+{
+	return text_cursor_blink_interval;
 }
 
 Context* CreateContext(const String& name, const Vector2i dimensions, RenderInterface* render_interface_for_context,

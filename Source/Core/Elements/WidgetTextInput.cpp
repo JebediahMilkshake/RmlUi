@@ -23,7 +23,6 @@
 
 namespace Rml {
 
-static constexpr float CURSOR_BLINK_TIME = 0.7f;          // [s]
 static constexpr float OVERFLOW_TOLERANCE = 0.5f;         // [px]
 static constexpr float COMPOSITION_UNDERLINE_WIDTH = 2.f; // [px]
 
@@ -442,10 +441,21 @@ void WidgetTextInput::OnUpdate()
 		cursor_timer -= float(current_time - last_update_time);
 		last_update_time = current_time;
 
-		while (cursor_timer <= 0)
+		// A non-positive interval would spin this loop forever without advancing cursor_timer;
+		// treat it as "don't blink" instead (cursor stays visible, timer parked open-ended).
+		const float blink_interval = GetTextCursorBlinkInterval();
+		if (blink_interval <= 0)
 		{
-			cursor_timer += CURSOR_BLINK_TIME;
-			cursor_visible = !cursor_visible;
+			cursor_visible = true;
+			cursor_timer = FLT_MAX;
+		}
+		else
+		{
+			while (cursor_timer <= 0)
+			{
+				cursor_timer += blink_interval;
+				cursor_visible = !cursor_visible;
+			}
 		}
 
 		if (parent->IsVisible(true))
@@ -1301,7 +1311,8 @@ void WidgetTextInput::ShowCursor(bool show)
 	if (show)
 	{
 		cursor_visible = true;
-		cursor_timer = CURSOR_BLINK_TIME;
+		const float blink_interval = GetTextCursorBlinkInterval();
+		cursor_timer = (blink_interval > 0) ? blink_interval : FLT_MAX;
 		last_update_time = GetSystemInterface()->GetElapsedTime();
 	}
 	else
