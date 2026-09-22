@@ -1569,7 +1569,7 @@ Vector2f WidgetTextInput::FormatText(float height_constraint)
 
 void WidgetTextInput::GenerateCursor()
 {
-	cursor_size.x = Math::Round(ElementUtilities::GetDensityIndependentPixelRatio(text_element));
+	cursor_size.x = 3.0f * Math::Round(ElementUtilities::GetDensityIndependentPixelRatio(text_element));
 	cursor_size.y = GetLineHeight();
 
 	Colourb color;
