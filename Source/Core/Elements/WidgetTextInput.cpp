@@ -28,6 +28,8 @@ static constexpr float OVERFLOW_TOLERANCE = 0.5f;         // [px]
 static constexpr float COMPOSITION_UNDERLINE_WIDTH = 2.f; // [px]
 
 enum class CharacterClass { Word, Punctuation, Newline, Whitespace, Undefined };
+// Coalescing kind for an undo/redo history entry; see WidgetTextInput::BeginUndoEdit.
+enum class EditGroup { Insert, DeleteBack, DeleteForward, Bulk };
 static CharacterClass GetCharacterClass(char c)
 {
 	if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || ((unsigned char)c >= 128))
@@ -218,6 +220,10 @@ WidgetTextInput::WidgetTextInput(ElementFormControl* _parent)
 
 	last_update_time = 0;
 	ink_overflow = false;
+
+	undo_group_open = false;
+	undo_group_kind = (int)EditGroup::Bulk;
+	undo_group_class = (int)CharacterClass::Undefined;
 
 	ShowCursor(false);
 }
@@ -606,6 +612,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 			if (ctrl && selection_length > 0)
 			{
 				CopySelection();
+				BeginUndoEdit((int)EditGroup::Bulk, (int)CharacterClass::Undefined);
 				DeleteSelection();
 				DispatchChangeEvent();
 				OnLayout();
@@ -624,6 +631,33 @@ void WidgetTextInput::ProcessEvent(Event& event)
 
 				if (AddCharacters(clipboard_text))
 					OnLayout();
+				MoveToCursor();
+				ShowCursor(true);
+			}
+		}
+		break;
+
+		case Input::KI_Z:
+		{
+			if (ctrl && !alt)
+			{
+				if (shift)
+					Redo();
+				else
+					Undo();
+				OnLayout();
+				MoveToCursor();
+				ShowCursor(true);
+			}
+		}
+		break;
+
+		case Input::KI_Y:
+		{
+			if (ctrl && !alt)
+			{
+				Redo();
+				OnLayout();
 				MoveToCursor();
 				ShowCursor(true);
 			}
@@ -682,6 +716,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	{
 		if (event.GetTargetElement() == parent)
 		{
+			CommitUndoGroup();
 			if (TextInputHandler* handler = GetTextInputHandler())
 				handler->OnDeactivate(text_input_context.get());
 			if (ClearSelection())
@@ -741,14 +776,28 @@ bool WidgetTextInput::AddCharacters(String string)
 {
 	SanitizeValue(string);
 
-	if (selection_length > 0)
+	// Replacing a selection is always its own undo step, regardless of how much text is being inserted.
+	const bool had_selection = (selection_length > 0);
+	if (had_selection)
+	{
+		BeginUndoEdit((int)EditGroup::Bulk, (int)CharacterClass::Undefined);
 		DeleteSelection();
+	}
 
 	if (max_length >= 0)
 		ClampValue(string, Math::Max(max_length - GetLength(), 0));
 
 	if (string.empty())
 		return false;
+
+	// A single typed character coalesces with adjacent characters of the same class (see GetCharacterClass), so
+	// undo removes a "word" at a time. A multi-character insert (e.g. a paste) is always its own undo step.
+	if (!had_selection)
+	{
+		const CharacterClass insert_class = (string.size() == 1 ? GetCharacterClass(string[0]) : CharacterClass::Undefined);
+		const EditGroup group = (string.size() == 1 ? EditGroup::Insert : EditGroup::Bulk);
+		BeginUndoEdit((int)group, (int)insert_class);
+	}
 
 	String value = GetAttributeValue();
 	const int attribute_insert_index = DisplayIndexToAttributeIndex(absolute_cursor_index, value);
@@ -768,6 +817,22 @@ bool WidgetTextInput::AddCharacters(String string)
 bool WidgetTextInput::DeleteCharacters(CursorMovement direction)
 {
 	bool out_of_bounds;
+	const bool had_selection = (selection_length > 0);
+	const bool word_movement = (direction == CursorMovement::PreviousWord || direction == CursorMovement::NextWord);
+
+	// Determine the class of the single character about to be deleted, so repeated backspace/delete presses of the
+	// same class (e.g. deleting through a word) coalesce into one undo step. Deleting an existing selection or a
+	// whole word (ctrl+backspace/delete) is always its own undo step.
+	CharacterClass delete_class = CharacterClass::Undefined;
+	if (!had_selection && !word_movement)
+	{
+		const String& value = GetValue();
+		if (direction == CursorMovement::Left && absolute_cursor_index > 0)
+			delete_class = GetCharacterClass(value[absolute_cursor_index - 1]);
+		else if (direction == CursorMovement::Right && absolute_cursor_index < (int)value.size())
+			delete_class = GetCharacterClass(value[absolute_cursor_index]);
+	}
+
 	// We set a selection of characters according to direction, and then delete it.
 	// If we already have a selection, we delete that first.
 	if (selection_length <= 0)
@@ -775,6 +840,11 @@ bool WidgetTextInput::DeleteCharacters(CursorMovement direction)
 
 	if (selection_length > 0)
 	{
+		const EditGroup group = (had_selection || word_movement)
+			? EditGroup::Bulk
+			: (direction == CursorMovement::Left ? EditGroup::DeleteBack : EditGroup::DeleteForward);
+		BeginUndoEdit((int)group, (int)delete_class);
+
 		DeleteSelection();
 		DispatchChangeEvent();
 
@@ -789,6 +859,76 @@ void WidgetTextInput::CopySelection()
 	const String& value = GetValue();
 	const String snippet = value.substr(Math::Min((size_t)selection_begin_index, (size_t)value.size()), (size_t)selection_length);
 	GetSystemInterface()->SetClipboardText(snippet);
+}
+
+WidgetTextInput::UndoState WidgetTextInput::CaptureUndoState() const
+{
+	return UndoState{GetAttributeValue(), absolute_cursor_index, selection_anchor_index, selection_begin_index, selection_length};
+}
+
+void WidgetTextInput::RestoreUndoState(const UndoState& state)
+{
+	parent->SetAttribute("value", state.value);
+
+	const int value_size = (int)GetValue().size();
+	absolute_cursor_index = Math::Clamp(state.cursor_index, 0, value_size);
+	selection_anchor_index = Math::Clamp(state.selection_anchor_index, 0, value_size);
+	selection_begin_index = Math::Clamp(state.selection_begin_index, 0, value_size);
+	selection_length = Math::Clamp(state.selection_length, 0, value_size - selection_begin_index);
+
+	FormatText();
+	UpdateCursorPosition(true);
+	MoveToCursor();
+	ShowCursor(true);
+
+	DispatchChangeEvent();
+}
+
+void WidgetTextInput::BeginUndoEdit(int edit_group, int character_class)
+{
+	const bool coalesce =
+		(EditGroup)edit_group != EditGroup::Bulk && undo_group_open && undo_group_kind == edit_group && undo_group_class == character_class;
+
+	if (!coalesce)
+	{
+		undo_history.push_back(CaptureUndoState());
+		redo_history.clear();
+	}
+
+	undo_group_open = (EditGroup)edit_group != EditGroup::Bulk;
+	undo_group_kind = edit_group;
+	undo_group_class = character_class;
+}
+
+void WidgetTextInput::CommitUndoGroup()
+{
+	undo_group_open = false;
+}
+
+void WidgetTextInput::Undo()
+{
+	if (undo_history.empty())
+		return;
+
+	CommitUndoGroup();
+	redo_history.push_back(CaptureUndoState());
+
+	UndoState state = std::move(undo_history.back());
+	undo_history.pop_back();
+	RestoreUndoState(state);
+}
+
+void WidgetTextInput::Redo()
+{
+	if (redo_history.empty())
+		return;
+
+	CommitUndoGroup();
+	undo_history.push_back(CaptureUndoState());
+
+	UndoState state = std::move(redo_history.back());
+	redo_history.pop_back();
+	RestoreUndoState(state);
 }
 
 bool WidgetTextInput::MoveCursorHorizontal(CursorMovement movement, bool select, bool& out_of_bounds)

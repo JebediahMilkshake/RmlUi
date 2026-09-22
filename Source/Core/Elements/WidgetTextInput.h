@@ -295,6 +295,38 @@ private:
 	Vector2f cursor_position;
 	Vector2f cursor_size;
 	Geometry cursor_geometry;
+
+	// --- Undo/redo history ---
+	// Consecutive edits of the same kind (insert / delete-back / delete-forward) and the same character class (see
+	// CharacterClass in WidgetTextInput.cpp) are coalesced into a single undo step, so undo/redo operates a "word"
+	// at a time, where a word is delimited by whitespace or a line break. `edit_group` and `character_class` below
+	// are the corresponding WidgetTextInput.cpp-local enums, passed as int so they don't need to be declared here.
+	struct UndoState {
+		String value;
+		int cursor_index;
+		int selection_anchor_index;
+		int selection_begin_index;
+		int selection_length;
+	};
+
+	/// Captures the current value, cursor, and selection for the undo/redo history.
+	UndoState CaptureUndoState() const;
+	/// Restores a previously captured value/cursor/selection snapshot.
+	void RestoreUndoState(const UndoState& state);
+	/// Begins or continues an undo-coalescing edit group, recording a snapshot when a new group starts.
+	void BeginUndoEdit(int edit_group, int character_class);
+	/// Ends any open undo-coalescing edit group, so the next edit starts a new undo step.
+	void CommitUndoGroup();
+	/// Reverts the most recent undo group, if any.
+	void Undo();
+	/// Re-applies the most recently undone group, if any.
+	void Redo();
+
+	Vector<UndoState> undo_history;
+	Vector<UndoState> redo_history;
+	bool undo_group_open;
+	int undo_group_kind;
+	int undo_group_class;
 };
 
 } // namespace Rml
