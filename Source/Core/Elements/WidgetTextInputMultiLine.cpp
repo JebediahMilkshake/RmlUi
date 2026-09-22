@@ -14,6 +14,10 @@ void WidgetTextInputMultiLine::SanitizeValue(String& value)
 	value.erase(std::remove_if(value.begin(), value.end(), [](char c) { return c == '\r' || c == '\t'; }), value.end());
 }
 
-void WidgetTextInputMultiLine::LineBreak() {}
+void WidgetTextInputMultiLine::LineBreak()
+{
+	if (AddCharacters("\n"))
+		OnLayout();
+}
 
 } // namespace Rml
