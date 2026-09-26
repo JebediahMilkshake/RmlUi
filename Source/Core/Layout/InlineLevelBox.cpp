@@ -162,10 +162,12 @@ FragmentConstructor InlineLevelBox_Text::CreateFragment(InlineLayoutMode mode, f
 	if (overflow)
 		out_overflow_handle = line_begin + line_length;
 
+	const bool forced_break = (line_contents == "\n");
+
 	LayoutFragmentHandle fragment_handle = (LayoutFragmentHandle)fragments.size();
 	fragments.push_back(std::move(line_contents));
 
-	return FragmentConstructor{FragmentType::TextRun, line_width, fragment_handle, out_overflow_handle};
+	return FragmentConstructor{FragmentType::TextRun, line_width, fragment_handle, out_overflow_handle, forced_break};
 }
 
 void InlineLevelBox_Text::Submit(const PlacedFragment& placed_fragment)

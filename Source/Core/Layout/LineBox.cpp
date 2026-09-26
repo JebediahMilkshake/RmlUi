@@ -371,6 +371,10 @@ bool LineBox::CanCollapseLine() const
 	{
 		if (fragment.layout_width > 0.f)
 			return false;
+		else if (fragment.forced_break)
+			// A blank line from an explicit line break (white-space: pre/pre-wrap/pre-line) has zero width like
+			// collapsible whitespace, but is deliberate content and must still take up a line.
+			return false;
 		else if (fragment.type == FragmentType::SizedBox)
 			return false;
 		else if (fragment.type == FragmentType::InlineBox && fragment.children_end_index > 0)

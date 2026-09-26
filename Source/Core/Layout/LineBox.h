@@ -85,7 +85,7 @@ private:
 		Fragment() = default;
 		Fragment(InlineLevelBox* box, FragmentConstructor constructor, VerticalAlignType vertical_align, float position_x, FragmentIndex parent) :
 			box(box), type(constructor.type), fragment_handle(constructor.fragment_handle), vertical_align(vertical_align), position(position_x, 0.f),
-			layout_width(constructor.layout_width), parent(parent)
+			layout_width(constructor.layout_width), parent(parent), forced_break(constructor.forced_break)
 		{}
 
 		InlineLevelBox* box = nullptr;
@@ -99,6 +99,7 @@ private:
 
 		// Vertical alignment state.
 		FragmentIndex parent = RootFragmentIndex;
+		bool forced_break = false; // True for a text run that is solely an explicit line break (e.g. a blank pre/pre-wrap line).
 		FragmentIndex aligned_subtree_root = RootFragmentIndex; // Index of the aligned subtree the fragment belongs to.
 		float baseline_offset = 0.f;                            // Vertical offset from aligned subtree root baseline to our baseline.
 

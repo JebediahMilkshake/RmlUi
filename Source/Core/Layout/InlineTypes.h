@@ -25,6 +25,11 @@ struct FragmentConstructor {
 	float layout_width = 0.f;
 	LayoutFragmentHandle fragment_handle = {}; // Handle to enable the inline-level box to reference any fragment-specific data.
 	LayoutOverflowHandle overflow_handle = {}; // Overflow handle is non-zero when there is another fragment to be layed out.
+
+	// True for a text run whose entire content is a single explicit line break (e.g. a blank line in
+	// white-space: pre/pre-wrap/pre-line content). Such a fragment has zero width like collapsible whitespace,
+	// but represents a deliberate blank line rather than layout-only whitespace, so it must not be collapsed.
+	bool forced_break = false;
 };
 
 struct PlacedFragment {
